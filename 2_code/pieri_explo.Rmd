@@ -1,0 +1,758 @@
+---
+title: "Pieri Explo survey"
+output:
+  html_document:
+    df_print: paged
+  word_document:
+    keep_md: yes
+---
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+///Installation of packages \\\
+--------------------------------------------------------------------------------
+--------------------------------------------- -->
+
+```{r setup, include = FALSE, results='hide', message=FALSE, warning=FALSE}
+## hide all code chunks in the output, but show errors
+knitr::opts_chunk$set(echo = FALSE, error = TRUE, fig.width = 6*1.25, fig.height = 6)
+
+
+## set default NA to - in output, define figure width/height
+options(knitr.kable.NA = "-")
+
+
+
+## Installing required packages for this template
+required_packages <- c("knitr",       # create output docs
+                       "here",        # find your files
+                       "rio",         # for importing data
+                       "epitrix",     # clean/shape data
+                       "dplyr",       # clean/shape data
+                       "tidyr",       # clean/shape data
+                       "forcats",     # manipulate and rearrange factors
+                       "stringr",     # manipulate texts
+                       "ggplot2",     # create plots and charts
+                       "sitrep",      # MSF field epi functions
+                       "survey",      # for survey functions
+                       "srvyr"        # dplyr wrapper for survey package
+                       )
+
+for (pkg in required_packages) {
+  ## install packages if not already present
+  if (!pkg %in% rownames(installed.packages())) {
+    install.packages(pkg)
+  }
+  
+  ## load packages to this current session 
+  library(pkg, character.only = TRUE)
+}
+
+
+## set default text size to 18 for plots
+## give classic black/white axes for plots
+ggplot2::theme_set(theme_classic(base_size = 18))
+```
+
+
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Import Pieri data \\\
+--------------------------------------------------------------------------------
+--------------------------------------------- -->
+
+```{r import_data, warning= FALSE}
+## Excel file ------------------------------------------------------------------
+
+## read in household data sheet
+study_data_hh <- rio::import(here::here("1_data", 
+                                        "raw", 
+                                        "20200815_COMMUNITY_FINDINGS.xlsx"), 
+                             which = "General Table",
+                             skip = 2, 
+                             na = ".") %>% 
+  ## convert all variables to lower case
+  janitor::clean_names()
+
+## read in individual level data sheet
+study_data_indiv <- rio::import(here::here("1_data", 
+                                           "raw", 
+                                           "20200815_COMMUNITY_FINDINGS.xlsx"), 
+                                which = "Detailed HH",
+                                skip = 2, 
+                                na = ".") %>% 
+  ## convert all variables to lower case
+  janitor::clean_names()
+
+
+```
+
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// merge_data_levels \\\
+--------------------------------------------------------------------------------
+For survey datasets with two levels (e.g. household and individual), 
+these levels will need to be merged in to one dataset. 
+
+This is done using a unique identifier for the household 
+(which has to be repeated for each row in the individuals dataset) 
+For a Dharma dataset this variable is "fact_0_id".
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r merge_data_levels, warning= FALSE}
+
+## create and ID variable in both datasets
+## HH data
+study_data_hh <- study_data_hh %>% 
+  mutate(id = paste0(location, "_", hh_number))
+
+## individual data
+study_data_indiv <- study_data_indiv %>% 
+  mutate(id = paste0(location, "_", hh_number))
+
+
+## join the individual and household data to form a complete data set
+study_data_raw <- study_data_hh %>% 
+  left_join(study_data_indiv, by = "id")
+  
+```
+
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// browse_data \\\
+--------------------------------------------------------------------------------
+
+You'll want to look at your data. Here are a few ways you can explore.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r browse_data, eval = FALSE}
+## view the first ten rows of data
+head(study_data_raw, n = 10)
+
+## overview of variable types and contents
+str(study_data_raw)
+
+## get summary: 
+## mean, median and max values of variables
+## counts for categorical variables
+## also gives number of NAs
+summary(study_data_raw)
+
+## view unique values contained in variables 
+## you can run this for any column -- just replace the column name
+unique(study_data_raw$sex)
+```
+
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This part of the script will create and clean variables in your data.
+
+All your cleaning and variable creation should happen in these chunks.
+That way, in case something goes wrong, you can push the small arrow at the top
+of the chunk to re-run all the code chunks up to the current one.
+
+The chunks are:
+- create_age_group   -- creates the age group variables from age
+- factor_vars        -- helps clean factor variables
+- numerical vars     -- convert variables to numerical variables
+
+You must adapt this section according to your data!
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// create_age_group \\\ 
+--------------------------------------------------------------------------------
+
+This chunk will help you set up your age group variable.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r create_age_group, warning= FALSE}
+
+## Age group variables ----------------------------------------------------------
+## This step shows you how to create categorical variables from numeric variables.
+## We have some intermediate steps on the way.
+
+## make sure age is an integer 
+study_data_cleaned <- study_data_raw %>% 
+  mutate(age_months = case_when(
+    grepl("M", age) ~ age,
+    TRUE ~ NA_character_
+  )) %>% 
+  mutate(age_months = as.numeric(str_replace(age_months, "M", ""))) %>% 
+  mutate(age_years = case_when(
+    !grepl("M|N/I", age) ~ as.numeric(age),
+    TRUE ~ as.numeric(age_months/12)
+  ) )
+  
+
+## create an age group variable with 3 age groups 6-11months, 1-4 years, 5-9 years
+study_data_cleaned <- study_data_cleaned %>%
+  mutate(age_group = factor(case_when(
+    age_years > 0 & age_years < 5  ~ "0-4 yrs",
+    age_years >= 5 & age_years < 15 ~ "5-14 yrs",
+    age_years >= 15 & age_years < 29 ~ "15-29 yrs",
+    age_years >= 30 & age_years < 45 ~ "30-44 yrs",
+    age_years >= 45 ~ "45+ yrs",
+    TRUE ~ NA_character_
+  ),
+  levels = c("0-4 yrs", 
+             "5-14 yrs", 
+             "15-29 yrs", 
+             "30-44 yrs", 
+             "45+ yrs"))
+  )
+
+```
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// factor_vars \\\
+--------------------------------------------------------------------------------
+
+This chunk will help you clean factor variables.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r factor_vars, warning= FALSE}
+
+## tidy up the sex variable and create a new one
+study_data_cleaned <- study_data_cleaned %>%
+  mutate(sex2 = case_when(
+    sex %in% c("F", "W") ~ "Female",
+    sex == "M" ~ "Male",
+    TRUE ~ NA_character_
+  ))
+
+## Violent deaths and natural deaths
+study_data_cleaned <- study_data_cleaned %>% 
+  ## convert unknown values for violent deaths to the same value
+  mutate(num_violent_deaths = as.numeric(case_when(
+    number_violent_deaths_in_the_last_3_months_in_the_hh == "Unknown" ~ NA_character_,
+    TRUE ~ number_violent_deaths_in_the_last_3_months_in_the_hh
+  ))) %>% 
+  ## repeat same steps for natural deaths, make all unknowns equal N/I 
+  mutate(num_natural_deaths = as.numeric(case_when(
+    number_natural_deaths_in_the_last_3_months_in_the_hh == "Unknown" ~ NA_character_,
+    TRUE ~ number_natural_deaths_in_the_last_3_months_in_the_hh
+  ))) 
+
+
+## separate out sickness and why didn't access care variables
+study_data_cleaned <- study_data_cleaned %>% 
+  ## create sickness variable
+  mutate(sickness = case_when(
+    sickness_why_didnt_access_msf_care %in% c("Abdominal pain",
+                                              "AWD + URTI", 
+                                              "Chronic condition", 
+                                              "Cough", "GSW", "Malaria",
+                                              "SRH", "TB", "Other") ~ 
+      sickness_why_didnt_access_msf_care,
+    TRUE ~ NA_character_
+  )) %>% 
+  ## create no access care
+  mutate(reason_no_care = case_when(
+    sickness_why_didnt_access_msf_care == sickness ~ NA_character_,
+    sickness_why_didnt_access_msf_care == "N/A" ~ NA_character_,
+    sickness_why_didnt_access_msf_care == "Admitted at the clinic" ~ NA_character_,
+    TRUE ~ sickness_why_didnt_access_msf_care
+  ))
+
+
+## create a hosting variable - indicates whether a household is hosting
+study_data_cleaned <- study_data_cleaned %>% 
+  ## if people under and 5 and over being  hosted then give a 1 otherwise 0
+  mutate(hosting_household = case_when(
+         is.na(number_hosted_members_5y) == F | is.na(number_hosted_members_5y_2) == F ~ 1,
+         TRUE ~ 0
+         ))
+
+```
+
+<!-- ## create a long version of the dataset to take all the comments into consideration -->
+```{r comments_assemble}
+
+comments_overview <- study_data_hh %>% 
+  select(main_comment_1:main_comment_5) %>% 
+  pivot_longer(cols = main_comment_1:main_comment_5, 
+               names_to = "all_comments",
+               values_to = "values") %>% 
+  mutate(new = values)
+
+```
+
+ <!-- Save comments overview -->
+
+```{r save_comments_doc}
+##rio::export(comments_overview, here::here("3_output", "comments_overview.xlsx"))
+```
+
+
+
+
+<!-- ### Apply data dictionary cleaning to clean the health facility dataset -->
+
+```{r dict_data_cleaning}
+
+## ## Standardising values --------------------------------------------------------
+# Import the dictionary that specifies the values of specific variables
+dictionary <- rio::import(here::here("1_data", 
+                                     "dictionary_pieri.xlsx"))
+
+## This step fixes the values so that you can read them.
+## values like 1/0 will be recoded as "Yes" / "No" based on the dictionary
+ comments_overview <- matchmaker::match_df(comments_overview,
+  dict  = dictionary,
+  from  = "options",
+  to    = "values",
+  by    = "grp"
+ )
+```
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Convert variables to numeric variables \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r clean_numerical, warning= FALSE}
+
+## Convert number of hosted members variables to be numeric
+study_data_cleaned <- study_data_cleaned %>% 
+  mutate_at(c("number_hosted_members_5y", "number_hosted_members_5y_2"), as.numeric) %>% 
+  ## convert number_time_sick and number_time_visited to numeric variables
+  mutate_at(c("number_time_sick_in_the_last_3_months", "number_time_visited_msf_clinic_in_the_last_3_months"), as.numeric)
+
+
+```
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Save data \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+
+```{r save_cleaned_data}
+# rio::export(study_data_cleaned, str_glue("study_data_cleaned_{Sys.Date()}.xlsx"))
+```
+
+# Results
+
+## Survey inclusion 
+
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// inclusion_counts \\\
+--------------------------------------------------------------------------------
+
+The below chunks calculate values that are displayed with the inline text
+
+Get the counts of clusters and households included 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+
+```{r inclusion_counts, warning= FALSE}
+
+## get counts of number of villages
+num_clus <- study_data_cleaned %>%
+  ## trim data to unique villages
+  distinct(location.x) %>% 
+  ## get number of rows (count how many unique)
+  nrow()
+
+## get counts of number households 
+num_hh <- study_data_cleaned %>% 
+  ## get unique houses by villages
+  distinct(location.x, hh_number.x) %>% 
+  ## get number of rounds (count how many unique)
+  nrow()
+
+```
+
+
+`r num_hh` households included across `r num_clus` villages in this analysis. 
+
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// cluster_hh_size \\\
+--------------------------------------------------------------------------------
+
+The below chunks calculate values that are displayed with the inline text
+
+Get counts of households per cluster and individuals per household. 
+From these create medians and standard deviations. 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+
+```{r cluster_hh_size, warning= FALSE}
+
+## get counts of the number of households per cluster
+clustersize <- study_data_cleaned %>% 
+  ## trim data to only unique households within each cluster
+  distinct(location.x, hh_number.x) %>%
+  ## count the number of households within each cluster
+  count(location.x) %>% 
+  pull(n)
+
+## get the median number of households per cluster
+clustermed <- median(clustersize)
+
+## get the min and max number of households per cluster
+## paste these together seperated by a dash 
+clusterrange <- str_c(range(clustersize), collapse = "--")
+
+## get counts of children per household 
+## do this by cluster as household IDs are only unique within clusters
+hhsize <- study_data_cleaned %>% 
+  count(location.x, hh_number.x) %>%
+  pull(n) 
+
+## get median number of children per household
+hhmed <- median(hhsize)
+## get the min and max number of children per household
+## paste these together seperated by a dash 
+hhrange <- str_c(range(hhsize), collapse = "--")
+
+# get standard deviation 
+hhsd <- round(sd(hhsize), digits = 1)
+```
+
+
+The median number of households per village was
+`r clustermed`, with a range of `r clusterrange`. The median number of individuals
+per household was `r hhmed` (range: `r hhrange`, standard deviation: `r hhsd`). 
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Demographic overview of households \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+There was an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_perm5 = round(mean(number_permanent_members_5y, na.rm = TRUE), digits = 0)) %>% pull(average_perm5)` permanent household members under 5 years and an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_perm_over5 = round(mean(number_permanent_members_5y_2, na.rm = TRUE), digits = 0)) %>% pull(average_perm_over5)` permanent household members 5 years and over. There were a total of `r nrow(study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% filter(hosting_household == 1))` households that were hosting people in their households with an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_host5 = round(mean(number_hosted_members_5y, na.rm = TRUE), digits = 0)) %>% pull(average_host5)` hosted household member under 5 years and `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_host_over5 = round(mean(number_hosted_members_5y_2, na.rm = TRUE), digits = 0)) %>% pull(average_host_over5)` hosted household member over 5 years.
+
+
+```{r household_overview, warning= FALSE}
+## Summary of households
+study_data_cleaned %>% 
+  distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
+  group_by(location.x) %>% 
+  ## calculate average number of violent deaths and range
+  summarise(count_household_number = n(),
+            mean_permanent_under5 = round(mean(number_permanent_members_5y, 
+                                               na.rm = TRUE), digits = 1),
+             mean_permanent_over5 = round(mean(number_permanent_members_5y_2, 
+                                               na.rm = TRUE), digits = 1),
+            mean_host_under5 = round(mean(number_hosted_members_5y, 
+                                               na.rm = TRUE), digits = 1),
+            mean_host_over5 = round(mean(number_hosted_members_5y_2, 
+                                               na.rm = TRUE), digits = 1)) %>% 
+  rename("Village"  = location.x,
+         "Number households" = count_household_number,
+         "Average permanent members <5 yrs" = mean_permanent_under5,
+         "Average permanent members >=5 yrs" = mean_permanent_over5,
+         "Average hosted members <5 yrs" = mean_host_under5,
+         "Average hosted members >= 5 yrs"  = mean_host_over5) %>% 
+  gt::gt()
+            
+            
+            
+```
+
+## Demographic information
+
+
+In total we included `r nrow(study_data_cleaned)` individuals in the survey analysis. 
+
+<!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// median_age_sex_ratios \\\
+--------------------------------------------------------------------------------
+
+The below chunk calculate values that are displayed inline
+
+This returns the median age and sex ratios overall as well as by age group. 
+It also pulls the age group with the highest sex ratio. 
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-->
+
+```{r median_age_sex_ratios, warning= FALSE}
+## compute the median age 
+medage <- median(study_data_cleaned$age_years, na.rm = TRUE)
+## paste the lower and uper quartile together
+iqr <- str_c(  # basically copy paste togehter the following
+  ## calculate the 25% and 75% of distribution, with missings removed
+  quantile(     
+    study_data_cleaned$age_years, 
+    c(0.25, 0.75), 
+    na.rm = TRUE), 
+  ## between lower and upper place an en-dash
+  collapse = "--")
+
+
+## compute overall sex ratio 
+sex_ratio <- study_data_cleaned %>% 
+  count(sex2) %>% 
+  pivot_wider(names_from = sex2, values_from = n) %>% 
+  mutate(ratio = round(Male/Female, digits = 3)) %>%
+  pull(ratio)
+
+## compute sex ratios by age group 
+sex_ratio_age <- study_data_cleaned %>% 
+  count(age_group, sex2) %>% 
+  pivot_wider(names_from = sex2, values_from = n) %>% 
+  mutate(ratio = round(Male/Female, digits = 3)) %>%
+  select(age_group, ratio)
+
+## sort table by ascending ratio then select the lowest (first)
+min_sex_ratio_age <- arrange(sex_ratio_age, ratio) %>% slice(1)
+
+```
+
+Among the `r nrow(study_data_cleaned)` surveyed individuals, there were 
+`r fmt_count(study_data_cleaned, sex2 == "Female")` females and 
+`r fmt_count(study_data_cleaned, sex2 == "Male")` males . The male to
+female ratio was `r sex_ratio` in the surveyed population. The lowest male to
+female ratio was `r min_sex_ratio_age$ratio`
+in the `r min_sex_ratio_age$age_group` year age group.
+The median age of surveyed individuals was `r medage` years (Q1-Q3 of `r iqr`
+years). Children under five years of age made up 
+`r fmt_count(study_data_cleaned, age_years < 5)` of the surveyed individuals.
+The highest number of surveyed indivduals were in the 
+`r table(study_data_cleaned$age_group) %>% which.max() %>% names()`
+year age group.
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// describe_by_age_group_and_sex \\\
+--------------------------------------------------------------------------------
+
+This chunk will create an unweighted table of survey individuals by age group 
+and sex.
+
+Note that proportions are of the total sample (not within each gender) 
+to change this, set proptotal = FALSE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r describe_by_age_group_and_sex, warning= FALSE}
+
+tab_linelist(study_data_cleaned, age_group, 
+             strata     = sex2, 
+             row_total  = TRUE,
+             col_total  = TRUE,
+             prop_total = TRUE) %>%
+  select(- variable) %>%
+  rename("Age group" = value) %>% 
+  gt::gt()
+```
+
+
+There were `r fmt_count(study_data_cleaned, is.na(sex))` cases missing information on sex and 
+`r fmt_count(study_data_cleaned, is.na(age_group))` missing age group.
+
+Age and gender distribution of household population covered by the survey excluding those with missing age values.
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// age_pyramid \\\
+--------------------------------------------------------------------------------
+
+This chunk creates an unweighted (using study_data_cleaned) age/sex pyramid
+of your cases.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r age_pyramid, warning=FALSE}
+
+plot_age_pyramid(filter(study_data_cleaned, is.na(age_group) == F), 
+                 age_group = "age_group", 
+                 split_by = "sex2",
+                 proportion = TRUE) + 
+  labs(y = "Proportion", x = "Age group (years)") + # change axis labels
+  theme(legend.position = "bottom",     # move legend to bottom
+        legend.title = element_blank(), # remove title
+        text = element_text(size = 18)  # change text size
+       )
+```
+
+
+
+## Deaths - violent and natural
+
+There were `r fmt_count(study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE), is.na(num_violent_deaths) == F)` households that had information on the number of violent deaths in the last three months in their household and `r fmt_count(study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE), is.na(num_natural_deaths) == F)` households that provided information on the number of natural deaths in the past three months. In total, there were `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(total_violent = sum(num_violent_deaths, na.rm = TRUE)) %>% pull(total_violent)` violent deaths reported over the past 3 months.
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Violent deaths in past 3 months \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+```{r violent_deaths_3months,  warning= FALSE}
+## Summary of violent deaths
+violent_deaths <- study_data_cleaned %>% 
+  distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
+  group_by(location.x) %>% 
+  ## calculate average number of violent deaths and range
+  summarise(mean_violent_deaths = round(mean(num_violent_deaths, na.rm = TRUE), digits = 1),
+            range_violent_deaths = str_c(range(num_violent_deaths, na.rm = TRUE), collapse = "--"))
+
+
+```
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Deaths due to natural causes in past 3 months \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+```{r natural_deaths_3months, warning= FALSE}
+## Summary of violent deaths
+natural_deaths <- study_data_cleaned %>% 
+  distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
+  group_by(location.x) %>% 
+  ## calculate average number of violent deaths and range
+  summarise(mean_natural_deaths = round(mean(num_natural_deaths, na.rm = TRUE), digits = 1),
+            range_natural_deaths = str_c(range(num_natural_deaths, na.rm = TRUE), collapse = "--"))
+
+
+```
+
+There was an average of `r round(mean(study_data_cleaned$num_violent_deaths, na.rm = TRUE), digits = 1)` violent deaths per household in the past 3 months among the households that reported information, with a range of `r str_c(range(study_data_cleaned$num_violent_deaths, na.rm = TRUE), collapse = "--")`. There was an average of `r round(mean(study_data_cleaned$num_natural_deaths, na.rm = TRUE), digits = 1)` natural deaths per household in the past 3 months among the households that reported information, with a range of `r str_c(range(study_data_cleaned$num_natural_deaths, na.rm = TRUE), collapse = "--")`
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Combine tables \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r table_natural_violent_deaths,  warning= FALSE}
+
+violent_deaths %>% 
+  left_join(natural_deaths, by = "location.x") %>% 
+  rename("Village" = location.x,
+         "Average violent deaths" = mean_violent_deaths,
+         "Range violent deaths" = range_violent_deaths,
+         "Average natural deaths" = mean_natural_deaths,
+         "Range natural deaths" = range_natural_deaths) %>% 
+  gt::gt()
+
+```
+
+
+## Sicknesses reported
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Sickness and access to MSF \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r sick_attended_msf, warning= FALSE}
+
+sick_attended_msf <- study_data_cleaned %>% 
+  summarise(sum_sickness = sum(number_time_sick_in_the_last_3_months, na.rm = TRUE),
+            sum_visited_msf = sum(number_time_visited_msf_clinic_in_the_last_3_months, na.rm = TRUE),
+            percent_visited_msf = round((sum_visited_msf/sum_sickness) *100, digits = 0))
+
+```
+
+
+```{r proportion_triaged_out}
+
+
+num_people_visited_clinic <- study_data_cleaned %>% 
+  ##filter for those who visited_msf_clinic
+  filter(number_time_visited_msf_clinic_in_the_last_3_months > 0) %>% 
+  tally()
+
+num_people_triaged_out <- study_data_cleaned %>% 
+  ##filter for those who visited_msf_clinic
+  filter(number_time_visited_msf_clinic_in_the_last_3_months > 0) %>% 
+  filter(grepl("Triaged out", reason_no_care)) %>% 
+  tally()
+  
+
+```
+
+Individuals reported a total of `r sick_attended_msf$sum_sickness` sickness episodes and a total of `r sick_attended_msf$sum_visited_msf` vists to MSF clinics over the past three months. Therefore, individuals reported attending an MSF clinic for `r sick_attended_msf$percent_visited_msf`% of their sickness episodes in the past three months.
+
+Of the `r num_people_visited_clinic %>% pull(n)` people who reporting visiting an MSF clinic one or more times in the past three months, `r num_people_triaged_out %>% pull(n)` reported having been triaged out, which represents `r round((num_people_triaged_out %>% pull(n)/num_people_visited_clinic %>% pull(n)) *100, digits= 0)`%.
+
+
+
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Sicknesses highlighted \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r proportion_sicknesses, warning= FALSE}
+## Calculate number and % of sickness
+tab_linelist(study_data_cleaned, sickness) %>% 
+  select(-variable) %>% 
+  #rename variables
+  rename("Sickness" = value) %>% 
+  mutate(proportion = round(proportion, digits = 0)) %>% 
+  arrange(desc(proportion)) %>% 
+  gt::gt()
+
+```
+
+## Reasons for lack of care
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// Reason for not accessing health care \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+
+```{r no_access_health_care,  warning= FALSE}
+
+ study_data_cleaned %>% 
+  ##only those that have been ill in the past 3 months
+  filter(number_time_sick_in_the_last_3_months > 0) %>% 
+  ## reasons for not accessing care
+  tab_linelist(reason_no_care) %>% 
+  ## remove variable variable
+  select(-variable) %>% 
+  ## rename variable
+  rename("Reason for lack of care"  = value) %>% 
+  ##round proportion
+  mutate(proportion = round(proportion, digits = 0)) %>% 
+  arrange(desc(proportion)) %>% 
+  gt::gt()
+  
+
+```
+
+
+## Comments analysis
+
+<!-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/// General comments  \\\
+--------------------------------------------------------------------------------
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
+
+```{r general_comments, warning = FALSE}
+
+## Count total number of households
+total_households <- nrow(study_data_hh)
+
+## Calculate number of comments and proportion per household
+comments_overview %>% 
+  filter(new != ".missing") %>% 
+  group_by(new) %>% 
+  tally() %>% 
+  ## add proportion variable
+  mutate(proportion = round((n/total_households)*100, digits = 0)) %>% 
+  ## tidy up appearance of the new variable
+  mutate(new = str_replace_all(new, "_", " ")) %>% 
+  mutate(new = str_to_sentence(new)) %>% 
+  rename("Comment"  = new) %>% 
+  arrange(desc(proportion)) %>% 
+  gt::gt()
+
+```
+
+
+
