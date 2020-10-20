@@ -265,7 +265,7 @@ study_data_cleaned <- study_data_cleaned %>%
 study_data_cleaned <- study_data_cleaned %>% 
   ## if people under and 5 and over being  hosted then give a 1 otherwise 0
   mutate(hosting_household = case_when(
-         is.na(number_hosted_members_5y) == F | is.na(number_hosted_members_5y_2) == F ~ 1,
+         number_hosted_members_5y > 0 | number_hosted_members_5y_2 > 0 ~ 1,
          TRUE ~ 0
          ))
 
@@ -433,7 +433,7 @@ per household was `r hhmed` (range: `r hhrange`, standard deviation: `r hhsd`).
 There was an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_perm5 = round(mean(number_permanent_members_5y, na.rm = TRUE), digits = 0)) %>% pull(average_perm5)` permanent household members under 5 years and an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_perm_over5 = round(mean(number_permanent_members_5y_2, na.rm = TRUE), digits = 0)) %>% pull(average_perm_over5)` permanent household members 5 years and over. There were a total of `r nrow(study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% filter(hosting_household == 1))` households that were hosting people in their households with an average of `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_host5 = round(mean(number_hosted_members_5y, na.rm = TRUE), digits = 0)) %>% pull(average_host5)` hosted household member under 5 years and `r study_data_cleaned %>% distinct(location.x, hh_number.x, .keep_all = TRUE) %>% summarise(average_host_over5 = round(mean(number_hosted_members_5y_2, na.rm = TRUE), digits = 0)) %>% pull(average_host_over5)` hosted household member over 5 years.
 
 
-```{r household_overview, warning= FALSE}
+```{r household_overview, warning= FALSE, message = FALSE}
 ## Summary of households
 study_data_cleaned %>% 
   distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
@@ -463,7 +463,7 @@ study_data_cleaned %>%
 ## Demographic information
 
 
-In total we included `r nrow(study_data_cleaned)` individuals in the survey analysis. 
+In total `r nrow(study_data_cleaned)` individuals were included in the survey analysis. 
 
 <!--~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /// median_age_sex_ratios \\\
@@ -585,7 +585,7 @@ There were `r fmt_count(study_data_cleaned %>% distinct(location.x, hh_number.x,
 --------------------------------------------------------------------------------
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
-```{r violent_deaths_3months,  warning= FALSE}
+```{r violent_deaths_3months,  warning= FALSE, message = FALSE}
 ## Summary of violent deaths
 violent_deaths <- study_data_cleaned %>% 
   distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
@@ -602,7 +602,7 @@ violent_deaths <- study_data_cleaned %>%
 --------------------------------------------------------------------------------
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ -->
-```{r natural_deaths_3months, warning= FALSE}
+```{r natural_deaths_3months, warning= FALSE,  message = FALSE}
 ## Summary of violent deaths
 natural_deaths <- study_data_cleaned %>% 
   distinct(location.x, hh_number.x, .keep_all = TRUE) %>% 
